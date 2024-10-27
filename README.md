@@ -4,6 +4,8 @@
 
 This repository contains an offline-first, browser-based application developed with [Next.js](https://github.com/vercel/next.js/) that allows users to locally transcribe audio recordings (successfully tested for audio lengths up to 20 minutes) into accurate, plain-text transcripts.
 
+**NEW: Video Processing** - Now supports uploading video files! The application automatically extracts audio from videos and processes them for transcription.
+
 These transcripts can then be processed by a locally hosted [Large Language Model](https://ollama.com/library/gemma3) (LLM), entirely offline without compromising data privacy.
 
 While the initial setup for this repository may pose challenges for people without technical expertise, only two straightforward commands via a [CLI](https://ghostty.org/) are required once the environment is properly configured. This repository serves as an open source reference for securely handling sensitive data, ensuring it remains local and never transits external networks.
@@ -65,7 +67,9 @@ common/
 │   ├── file-system.ts         # File path utilities and repository detection
 │   ├── whisper-config.ts      # Whisper model configuration
 │   ├── llm-config.ts          # Ollama LLM configuration and utilities
-│   └── api-responses.ts       # Standardized API response helpers
+│   ├── api-responses.ts       # Standardized API response helpers
+│   ├── file-type-validator.ts # File type validation (audio/video)
+│   └── video-processor.ts     # Video-to-audio extraction with FFmpeg
 ├── api-client.ts              # Frontend API call utilities
 ├── shared-utilities.ts        # Utilities safe for both client and server
 ├── constants.ts               # Application constants
@@ -100,9 +104,16 @@ All configuration is centralized for easy modification:
 
 **File Handling** (`common/server/file-system.ts`):
 - Supported audio formats: `.wav`, `.mp3`, `.ogg`, `.flac`, `.m4a`
+- Supported video formats: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.flv`
 - Prompt file: `__prompt.txt` in public directory
 - Transcripts: `filename.txt`
 - Introspections: `filename.introspection.txt`
+
+**Video Processing** (`common/server/video-processor.ts`):
+- Extracts audio from video files using FFmpeg
+- Outputs WAV format (16kHz, mono) optimized for Whisper
+- Configurable timeout (default: 5 minutes)
+- Optional video file retention
 
 #### Data Flow
 
@@ -118,6 +129,16 @@ sequenceDiagram
     User->>Browser: Upload audio file
     Browser->>API: POST /api/upload
     API->>FileSystem: Save audio file
+    API->>Whisper: Transcribe audio
+    Whisper->>FileSystem: Save transcript
+    API->>Browser: Return filename
+
+    Note over User,Browser: Video Upload (NEW)
+    User->>Browser: Upload video file
+    Browser->>API: POST /api/upload
+    API->>FileSystem: Save temp video
+    API->>API: Extract audio (FFmpeg)
+    API->>FileSystem: Save extracted audio
     API->>Whisper: Transcribe audio
     Whisper->>FileSystem: Save transcript
     API->>Browser: Return filename
@@ -139,6 +160,7 @@ sequenceDiagram
 - **Error Handling**: Comprehensive error messages for debugging
 - **Local-Only**: No external API calls, all processing happens locally
 - **Privacy-First**: Audio and transcripts never leave your machine
+- **Video Support**: Automatically extracts audio from video files for transcription
 
 ### Development Scripts
 
@@ -154,5 +176,7 @@ npm run script run
 ```
 
 ### Contact
+
+For detailed information about the video processing feature, see [VIDEO_PROCESSING_FEATURE.md](VIDEO_PROCESSING_FEATURE.md).
 
 If you have questions ping me on Twitter, [@wwwjim](https://www.twitter.com/wwwjim). Or you can ping [@internetxstudio](https://x.com/internetxstudio).
