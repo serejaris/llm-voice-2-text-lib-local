@@ -6,11 +6,15 @@ import * as React from 'react';
 import * as Queries from '@common/api-client';
 import * as Utilities from '@common/shared-utilities';
 import * as Constants from '@common/constants';
+import * as UploadTypes from '@common/upload-progress-types';
 
 import CircularLoader from '@components/CircularLoader';
 import ActionUploadButton from '@components/ActionUploadButton';
 import TextArea from '@components/TextArea';
 import FontSelector from '@components/FontSelector';
+import InlineUploadProgress from '@components/InlineUploadProgress';
+import { useUploadProgress } from '@common/hooks/useUploadProgress';
+import { useUploadStatusPolling } from '@common/hooks/useUploadStatusPolling';
 
 const Action = (props) => {
   if (props.disabled) {
@@ -51,6 +55,92 @@ export default function Application({ children }: { children?: React.ReactNode }
   const [transcription, setTranscription] = React.useState('');
   const [introspection, setIntrospection] = React.useState('');
   const [transcriptionFont, setTranscriptionFont] = React.useState(Constants.DEFAULT_TRANSCRIPTION_FONT);
+  
+  // Upload progress management
+  const {
+    uploadState,
+    initializeUpload,
+    updateProgress,
+    transitionToStage,
+    handleSuccess,
+    handleError,
+    cancelUpload,
+    resetUpload,
+  } = useUploadProgress();
+  
+  // Upload status polling
+  const { startPolling, stopPolling } = useUploadStatusPolling({
+    onStatusChange: (status) => {
+      transitionToStage(status.stage, status.message);
+    },
+    onComplete: async (filename) => {
+      handleSuccess();
+      // Refresh file list after successful upload (audio extraction complete)
+      const response = await Queries.getData({ route: '/api/list' });
+      if (response) {
+        setFiles(response.data);
+      }
+      setUploading(false);
+      // Note: NOT setting transcribing to false - upload is done, but transcription is manual
+    },
+    onError: (error) => {
+      handleError(error);
+      setUploading(false);
+      setTranscribing(false);
+    },
+  });
+
+  // Handle upload start
+  const handleUploadStart = React.useCallback((data: { fileName: string; fileSize: number; uploadId: string }) => {
+    const abortController = initializeUpload(data);
+    setUploading(true);
+    // Don't set transcribing - upload and transcription are separate
+    setIntrospection('');
+  }, [initializeUpload]);
+  
+  // Handle upload progress
+  const handleUploadProgress = React.useCallback((progressEvent: UploadTypes.UploadProgressEvent) => {
+    updateProgress(progressEvent);
+  }, [updateProgress]);
+  
+  // Handle stage change
+  const handleStageChange = React.useCallback((stage: UploadTypes.UploadStage) => {
+    transitionToStage(stage);
+    
+    // Start polling when upload completes and extraction begins (for video files)
+    if (stage === UploadTypes.UploadStage.EXTRACTING) {
+      if (uploadState.uploadId) {
+        startPolling(uploadState.uploadId);
+      }
+    }
+  }, [transitionToStage, uploadState.uploadId, startPolling]);
+  
+  // Handle upload success
+  const handleUploadSuccess = React.useCallback(async ({ data }: any) => {
+    // Upload complete - refresh file list and stop upload state
+    handleSuccess();
+    const response = await Queries.getData({ route: '/api/list' });
+    if (response) {
+      setFiles(response.data);
+    }
+    setUploading(false);
+    // Don't set transcribing or introspecting - those are manual operations
+  }, [handleSuccess]);
+  
+  // Handle upload error
+  const handleUploadError = React.useCallback((error: string) => {
+    handleError(error);
+    setUploading(false);
+    setTranscribing(false);
+    stopPolling();
+  }, [handleError, stopPolling]);
+  
+  // Handle upload cancel
+  const handleUploadCancel = React.useCallback(() => {
+    cancelUpload();
+    setUploading(false);
+    stopPolling();
+  }, [cancelUpload, stopPolling]);
 
   async function onSelect(name) {
     setCurrent(name);
@@ -112,20 +202,20 @@ export default function Application({ children }: { children?: React.ReactNode }
           <div className={styles.top}>
             <ActionUploadButton
               disabled={uploading || transcribing || introspecting}
-              onLoading={() => {
-                setUploading(true);
-                setTranscribing(true);
-                setIntrospection('');
-              }}
-              onSuccess={async ({ data }) => {
-                const response = await Queries.getData({ route: '/api/list' });
-                setFiles(response.data);
-                setUploading(false);
-                setTranscribing(false);
-                setIntrospecting(false);
-              }}
+              onUploadStart={handleUploadStart}
+              onProgress={handleUploadProgress}
+              onStageChange={handleStageChange}
+              onSuccess={handleUploadSuccess}
+              onError={handleUploadError}
+              onCancel={handleUploadCancel}
+              abortController={uploadState.abortController}
             />
           </div>
+          
+          {/* Inline Upload Progress */}
+          {uploadState.active && (
+            <InlineUploadProgress uploadState={uploadState} />
+          )}
           <div className={styles.bottom}>
             {uploading ? (
               <>

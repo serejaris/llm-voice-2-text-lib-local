@@ -5,6 +5,10 @@ import * as Server from '@common/server';
 import * as FileSystem from '@common/server/file-system';
 import * as ApiResponses from '@common/server/api-responses';
 import { transcribeAudioFile } from '@common/server/whisper-config';
+import { validateFileType, FileType, getUnsupportedFileMessage } from '@common/server/file-type-validator';
+import { extractAudioFromVideo, getConfigFromEnv } from '@common/server/video-processor';
+import { setUploadStatus } from '@common/server/upload-status-manager';
+import { UploadStage } from '@common/upload-progress-types';
 
 export const config = {
   api: {
@@ -62,24 +66,112 @@ export default async function apiUpload(req, res) {
   const fileEnd = nextBoundaryIndex;
   const fileBuffer = buffer.slice(fileStart, fileEnd);
 
-  // Use centralized file system utilities
+  // Extract uploadId from headers if present
+  const uploadId = req.headers['x-upload-id'] as string | undefined;
+
+  // Validate file type
+  const validation = validateFileType(filename);
+  
+  if (!validation.isSupported) {
+    if (uploadId) {
+      setUploadStatus(uploadId, {
+        stage: UploadStage.ERROR,
+        message: 'Unsupported file type',
+        error: getUnsupportedFileMessage(validation.extension),
+      });
+    }
+    return ApiResponses.badRequestResponse(res, getUnsupportedFileMessage(validation.extension));
+  }
+
   try {
-    const destPath = FileSystem.getPublicFilePath(filename);
-    
-    // Validate it's an audio file
-    if (!FileSystem.isValidAudioFile(filename)) {
-      return ApiResponses.badRequestResponse(res, 'Invalid audio file format. Supported formats: .wav, .mp3, .ogg, .flac, .m4a');
+    let audioFilePath: string;
+    let audioFilename: string;
+
+    if (validation.fileType === FileType.AUDIO) {
+      // Handle audio file - existing flow
+      audioFilename = validation.originalFilename;
+      audioFilePath = FileSystem.getPublicFilePath(audioFilename);
+      await fs.writeFile(audioFilePath, fileBuffer);
+      
+      // Audio upload complete - no need to update status, will complete below
+    } else if (validation.fileType === FileType.VIDEO) {
+      // Handle video file - extract audio
+      console.log('Processing video file:', validation.originalFilename);
+      
+      // Update status: extracting audio
+      if (uploadId) {
+        setUploadStatus(uploadId, {
+          stage: UploadStage.EXTRACTING,
+          message: 'Extracting audio from video...',
+        });
+      }
+      
+      const videoConfig = getConfigFromEnv();
+      const result = await extractAudioFromVideo(fileBuffer, validation.originalFilename, videoConfig);
+      
+      if (!result.success || !result.audioFilePath || !result.audioFilename) {
+        console.error('Video processing failed:', result.error);
+        
+        if (uploadId) {
+          setUploadStatus(uploadId, {
+            stage: UploadStage.ERROR,
+            message: 'Failed to extract audio from video',
+            error: result.error || 'Unknown error',
+          });
+        }
+        
+        return ApiResponses.serverErrorResponse(res, result.error || 'Failed to extract audio from video');
+      }
+      
+      audioFilePath = result.audioFilePath;
+      audioFilename = result.audioFilename;
+      console.log('Audio extracted successfully:', audioFilename);
+      
+      // Extraction complete - no need to update status, will complete below
+    } else {
+      if (uploadId) {
+        setUploadStatus(uploadId, {
+          stage: UploadStage.ERROR,
+          message: 'Unsupported file type',
+          error: 'Unsupported file type',
+        });
+      }
+      return ApiResponses.badRequestResponse(res, 'Unsupported file type');
     }
 
-    // Write the uploaded file
-    await fs.writeFile(destPath, fileBuffer);
+    // DO NOT transcribe automatically - just return the audio filename
+    // User will manually trigger transcription from the UI
+    console.log('Upload complete, audio file ready:', audioFilename);
+    
+    // Update status: complete
+    if (uploadId) {
+      setUploadStatus(uploadId, {
+        stage: UploadStage.COMPLETE,
+        message: 'Upload complete',
+        complete: true,
+        filename: audioFilename,
+      });
+    }
 
-    // Transcribe using centralized configuration
-    await transcribeAudioFile(destPath);
-
-    return ApiResponses.successResponse(res, filename);
+    return ApiResponses.successResponse(res, {
+      filename: audioFilename,
+      originalFilename: filename,
+      fileType: validation.fileType === FileType.AUDIO ? 'audio' : 'video',
+      stages: validation.fileType === FileType.VIDEO 
+        ? ['upload', 'extraction']
+        : ['upload'],
+    });
   } catch (error) {
     console.error('Upload error:', error);
+    
+    if (uploadId) {
+      setUploadStatus(uploadId, {
+        stage: UploadStage.ERROR,
+        message: 'Failed to process upload',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+    
     return ApiResponses.serverErrorResponse(res, 'Failed to process upload');
   }
 }
