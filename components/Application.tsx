@@ -3,12 +3,14 @@
 import styles from '@components/Application.module.scss';
 
 import * as React from 'react';
-import * as Queries from '@common/queries';
-import * as Utilities from '@common/utilities';
+import * as Queries from '@common/api-client';
+import * as Utilities from '@common/shared-utilities';
+import * as Constants from '@common/constants';
 
 import CircularLoader from '@components/CircularLoader';
 import ActionUploadButton from '@components/ActionUploadButton';
 import TextArea from '@components/TextArea';
+import FontSelector from '@components/FontSelector';
 
 const Action = (props) => {
   if (props.disabled) {
@@ -30,19 +32,25 @@ const Copy = (props) => {
   return <div className={styles.copy} {...props} />;
 };
 
+const TranscriptionCopy = (props) => {
+  const { style, ...rest } = props;
+  return <div className={styles.copyTranscription} style={style} {...rest} />;
+};
+
 const Prompt = (props) => {
   return <TextArea value={props.value} onChange={props.onChange}></TextArea>;
 };
 
-export default function Application({ children }) {
+export default function Application({ children }: { children?: React.ReactNode }) {
   const [prompt, setPrompt] = React.useState('');
   const [current, setCurrent] = React.useState('');
-  const [files, setFiles] = React.useState([]);
+  const [files, setFiles] = React.useState<string[]>([]);
   const [uploading, setUploading] = React.useState(true);
   const [transcribing, setTranscribing] = React.useState(false);
   const [introspecting, setIntrospecting] = React.useState(false);
   const [transcription, setTranscription] = React.useState('');
   const [introspection, setIntrospection] = React.useState('');
+  const [transcriptionFont, setTranscriptionFont] = React.useState(Constants.DEFAULT_TRANSCRIPTION_FONT);
 
   async function onSelect(name) {
     setCurrent(name);
@@ -81,6 +89,21 @@ export default function Application({ children }) {
 
     init();
   }, []);
+
+  // Load font preference from localStorage
+  React.useEffect(() => {
+    const savedFont = Utilities.getFontPreference(
+      Constants.TRANSCRIPTION_FONT_STORAGE_KEY,
+      Constants.DEFAULT_TRANSCRIPTION_FONT
+    );
+    setTranscriptionFont(savedFont);
+  }, []);
+
+  // Handle font change and persist to localStorage
+  const handleFontChange = (newFont: string) => {
+    setTranscriptionFont(newFont);
+    Utilities.setFontPreference(Constants.TRANSCRIPTION_FONT_STORAGE_KEY, newFont);
+  };
 
   return (
     <div className={styles.root}>
@@ -188,9 +211,15 @@ export default function Application({ children }) {
                 ◎ Introspect
               </Action>
             )}
+
+            <FontSelector
+              disabled={uploading || transcribing || introspecting}
+              selectedFont={transcriptionFont}
+              onFontChange={handleFontChange}
+            />
           </div>
           <div className={styles.bottom}>
-            <Copy>
+            <TranscriptionCopy style={{ '--font-transcription': transcriptionFont } as React.CSSProperties}>
               {transcribing ? (
                 <>
                   <CircularLoader />
@@ -199,7 +228,7 @@ export default function Application({ children }) {
               ) : (
                 transcription
               )}
-            </Copy>
+            </TranscriptionCopy>
           </div>
         </div>
       </div>

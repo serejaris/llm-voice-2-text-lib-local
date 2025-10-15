@@ -1,11 +1,9 @@
-import * as Constants from '@common/constants';
 import * as Server from '@common/server';
-import * as Utilities from '@common/utilities';
+import * as FileSystem from '@common/server/file-system';
+import * as ApiResponses from '@common/server/api-responses';
 
 import fs from 'fs/promises';
-import path from 'path';
-
-import { existsSync } from 'fs';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const config = {
   api: {
@@ -13,31 +11,24 @@ export const config = {
   },
 };
 
-export default async function apiGetPrompt(req, res) {
+export default async function apiGetPrompt(req: NextApiRequest, res: NextApiResponse) {
   await Server.cors(req, res);
 
-  const entryScript = process.cwd();
-  let repoRoot = entryScript;
-  if (!existsSync(path.join(entryScript, 'global.scss'))) {
-    let dir = path.dirname(entryScript);
-    while (dir !== '/' && !existsSync(path.join(dir, 'global.scss'))) {
-      dir = path.dirname(dir);
-    }
-    repoRoot = dir;
-  }
-  if (!repoRoot) {
-    return res.status(409).json({ error: true, data: null });
-  }
-
-  const filePath = path.join(repoRoot, `public`, `__prompt.txt`);
-  if (!existsSync(filePath)) {
-    return res.status(404).json({ error: true, data: null });
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    return ApiResponses.methodNotAllowedResponse(res, ['GET', 'POST']);
   }
 
   try {
-    const content = await fs.readFile(filePath, 'utf-8');
-    return res.status(200).json({ success: true, data: content });
-  } catch {
-    return res.status(500).json({ error: true, data: null });
+    const promptPath = FileSystem.getPromptFilePath();
+    
+    if (!FileSystem.fileExists(promptPath)) {
+      return ApiResponses.notFoundResponse(res, 'Prompt file not found');
+    }
+
+    const content = await fs.readFile(promptPath, 'utf-8');
+    return ApiResponses.successResponse(res, content);
+  } catch (error) {
+    console.error('Error reading prompt:', error);
+    return ApiResponses.serverErrorResponse(res, 'Failed to read prompt');
   }
 }

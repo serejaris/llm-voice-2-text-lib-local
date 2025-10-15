@@ -1,10 +1,9 @@
 import * as Server from '@common/server';
-import * as Constants from '@common/constants';
+import * as FileSystem from '@common/server/file-system';
+import * as ApiResponses from '@common/server/api-responses';
 
 import fs from 'fs/promises';
-import path from 'path';
-
-import { existsSync } from 'fs';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const config = {
   api: {
@@ -12,29 +11,23 @@ export const config = {
   },
 };
 
-export default async function apiList(req, res) {
+export default async function apiList(req: NextApiRequest, res: NextApiResponse) {
   await Server.cors(req, res);
 
-  const entryScript = process.cwd();
-  let repoRoot = entryScript;
-  if (!existsSync(path.join(entryScript, 'global.scss'))) {
-    let dir = path.dirname(entryScript);
-    while (dir !== '/' && !existsSync(path.join(dir, 'global.scss'))) {
-      dir = path.dirname(dir);
-    }
-    repoRoot = dir;
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    return ApiResponses.methodNotAllowedResponse(res, ['GET', 'POST']);
   }
 
-  if (!repoRoot) {
-    return res.status(409).json({ error: true, data: null });
+  try {
+    const publicDir = FileSystem.getPublicDirectoryPath();
+    const files = await fs.readdir(publicDir);
+    
+    // Filter for audio files using supported extensions
+    const audio = files.filter((fileName) => FileSystem.isValidAudioFile(fileName));
+
+    return ApiResponses.successResponse(res, audio);
+  } catch (error) {
+    console.error('Error listing files:', error);
+    return ApiResponses.serverErrorResponse(res, 'Failed to list audio files');
   }
-
-  const directory = path.join(repoRoot, 'public');
-  const files = await fs.readdir(directory);
-  const audio = files.filter((fileName) => /\.(mp3|wav|ogg|flac|m4a)$/i.test(fileName));
-
-  return res.status(200).json({
-    success: true,
-    data: audio,
-  });
 }

@@ -1,11 +1,11 @@
 import fs from 'fs/promises';
-import path from 'path';
 
-import * as Constants from '@common/constants';
 import * as Server from '@common/server';
-import * as Utilities from '@common/utilities';
+import * as Utilities from '@common/shared-utilities';
+import * as FileSystem from '@common/server/file-system';
+import * as ApiResponses from '@common/server/api-responses';
 
-import { existsSync } from 'fs';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const config = {
   api: {
@@ -13,38 +13,34 @@ export const config = {
   },
 };
 
-export default async function apiUpdatePrompt(req, res) {
+export default async function apiUpdatePrompt(req: NextApiRequest, res: NextApiResponse) {
   await Server.cors(req, res);
+
+  if (req.method !== 'POST') {
+    return ApiResponses.methodNotAllowedResponse(res, ['POST']);
+  }
 
   const { prompt } = req.body || {};
 
   if (Utilities.isEmpty(prompt)) {
-    return res.status(400).json({ error: true, data: null });
+    return ApiResponses.badRequestResponse(res, 'Prompt text is required');
   }
 
-  const entryScript = process.cwd();
-  let repoRoot = entryScript;
-  if (!existsSync(path.join(entryScript, 'global.scss'))) {
-    let dir = path.dirname(entryScript);
-    while (dir !== '/' && !existsSync(path.join(dir, 'global.scss'))) {
-      dir = path.dirname(dir);
+  try {
+    const promptPath = FileSystem.getPromptFilePath();
+
+    if (!FileSystem.fileExists(promptPath)) {
+      return ApiResponses.notFoundResponse(res, 'Prompt file not found');
     }
-    repoRoot = dir;
+
+    await fs.writeFile(promptPath, prompt, {
+      encoding: 'utf-8',
+      flag: 'w',
+    });
+
+    return ApiResponses.successResponse(res, { prompt, path: promptPath });
+  } catch (error) {
+    console.error('Error updating prompt:', error);
+    return ApiResponses.serverErrorResponse(res, 'Failed to update prompt');
   }
-  if (!repoRoot) {
-    return res.status(409).json({ error: true, data: null });
-  }
-
-  const filePath = path.join(repoRoot, `public`, `__prompt.txt`);
-
-  if (!existsSync(filePath)) {
-    return res.status(404).json({ error: true, data: null });
-  }
-
-  await fs.writeFile(filePath, prompt, {
-    encoding: 'utf-8',
-    flag: 'w',
-  });
-
-  return res.status(200).json({ success: true, data: prompt, out: filePath });
 }

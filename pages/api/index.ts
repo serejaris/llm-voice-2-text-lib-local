@@ -1,5 +1,6 @@
-import * as Constants from '@common/constants';
 import * as Server from '@common/server';
+
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const config = {
   api: {
@@ -7,10 +8,10 @@ export const config = {
   },
 };
 
-export default async function apiIndex(req, res) {
+export default async function apiIndex(req: NextApiRequest, res: NextApiResponse) {
   await Server.cors(req, res);
 
-  res.json({
+  return res.json({
     success: true,
     message: 'hey there, friend.',
   });

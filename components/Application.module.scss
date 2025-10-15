@@ -99,6 +99,13 @@
   white-space: pre-wrap;
 }
 
+.copyTranscription {
+  font-size: var(--type-scale-6);
+  line-height: 1.1;
+  white-space: pre-wrap;
+  font-family: var(--font-transcription, var(--font-family-mono));
+}
+
 .top {
   display: flex;
   flex-shrink: 0;

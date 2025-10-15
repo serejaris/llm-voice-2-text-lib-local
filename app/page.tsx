@@ -2,7 +2,7 @@ import '@root/animations.scss';
 import '@root/global.scss';
 
 import * as Constants from '@common/constants';
-import * as Utilities from '@common/utilities';
+import * as Utilities from '@common/shared-utilities';
 
 import Application from '@components/Application';
 import DefaultLayout from '@components/DefaultLayout';

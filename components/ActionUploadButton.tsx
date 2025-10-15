@@ -3,8 +3,8 @@ import styles from '@components/ActionUploadButton.module.scss';
 import * as Constants from '@common/constants';
 import * as React from 'react';
 
-export default function UploadActionButton(props) {
-  const inputRef = React.useRef(null);
+export default function UploadActionButton(props: any) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   if (props.disabled) {
     return (
@@ -32,7 +32,7 @@ export default function UploadActionButton(props) {
             props.onLoading();
           }
 
-          let file = e.target.files[0] || null;
+          let file = e.target.files?.[0] || null;
           if (!file) {
             alert('You need to provide an audio file.');
             return;
@@ -52,7 +52,7 @@ export default function UploadActionButton(props) {
           }
         }}
       />
-      <button className={styles.button} type="button" onClick={() => inputRef.current && inputRef.current.click()}>
+      <button className={styles.button} type="button" onClick={() => inputRef.current?.click()}>
         ◎ Upload Audio
       </button>
     </form>

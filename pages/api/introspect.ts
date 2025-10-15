@@ -1,90 +1,12 @@
 import fs from 'fs/promises';
-import path from 'path';
 
-import * as Constants from '@common/constants';
 import * as Server from '@common/server';
-import * as Utilities from '@common/utilities';
+import * as Utilities from '@common/shared-utilities';
+import * as FileSystem from '@common/server/file-system';
+import * as ApiResponses from '@common/server/api-responses';
+import { queryOllamaHTTP, normalizeMultilineText, QUERY_DIRECTIVES } from '@common/server/llm-config';
 
-import { Agent } from 'undici';
-import { existsSync } from 'fs';
-
-const noTimeoutAgent = new Agent({
-  headersTimeout: 0,
-  bodyTimeout: 0,
-});
-
-function extractPlainText(rawOutput) {
-  if (!rawOutput) return null;
-
-  if (Array.isArray(rawOutput)) {
-    if (typeof rawOutput[1] === 'string') {
-      return rawOutput[1].trimEnd();
-    }
-    rawOutput = rawOutput[0];
-  }
-
-  if (typeof rawOutput === 'string') {
-    const tagRegex = /<plain_text_response>\s*([\s\S]*?)\s*<\/plain_text_response>/i;
-    const match = rawOutput.match(tagRegex);
-    if (match && typeof match[1] === 'string') {
-      return match[1].trimEnd();
-    }
-    return rawOutput.trimEnd();
-  }
-
-  return null;
-}
-
-function normalizeMultilineText(input) {
-  const lines = input
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  const result = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const current = lines[i];
-    const next = lines[i + 1] || '';
-
-    if (current.endsWith('-') && next) {
-      result.push(current.slice(0, -1));
-    } else {
-      if (current.match(/[a-zA-Z0-9)]$/) && next && !next.startsWith(',') && !next.startsWith('.') && !next.startsWith(';') && !next.startsWith(':')) {
-        result.push(current + ' ');
-      } else {
-        result.push(current);
-      }
-    }
-  }
-
-  return result.join('').replace(/\s+/g, ' ').trim();
-}
-
-async function queryOllamaHTTP(promptText) {
-  const response = await fetch('http://localhost:11434/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gemma3:27b',
-      prompt: promptText,
-      stream: false,
-    }),
-    dispatcher: noTimeoutAgent,
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const jsonResp = await response.json();
-
-  let introspectionResult = jsonResp.response.trim();
-  const jsonRegex = /<plain_text_response>\s*([\s\S]*?)\s*<\/plain_text_response>/i;
-  const jsonMatch = introspectionResult.match(jsonRegex);
-
-  return extractPlainText(jsonMatch);
-}
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const config = {
   api: {
@@ -92,58 +14,67 @@ export const config = {
   },
 };
 
-export default async function apiIntrospect(req, res) {
+export default async function apiIntrospect(req: NextApiRequest, res: NextApiResponse) {
   await Server.cors(req, res);
+
+  if (req.method !== 'POST') {
+    return ApiResponses.methodNotAllowedResponse(res, ['POST']);
+  }
 
   const { name } = req.body || {};
 
   if (Utilities.isEmpty(name)) {
-    return res.status(400).json({ error: true, data: null });
+    return ApiResponses.badRequestResponse(res, 'File name is required');
   }
 
-  const entryScript = process.cwd();
-  let repoRoot = entryScript;
-  if (!existsSync(path.join(entryScript, 'global.scss'))) {
-    let dir = path.dirname(entryScript);
-    while (dir !== '/' && !existsSync(path.join(dir, 'global.scss'))) {
-      dir = path.dirname(dir);
+  try {
+    const transcriptPath = FileSystem.getTranscriptionPath(name);
+    const promptPath = FileSystem.getPromptFilePath();
+
+    // Check if transcription file exists
+    if (!FileSystem.fileExists(transcriptPath)) {
+      return ApiResponses.notFoundResponse(res, `Transcription file for '${name}' not found`);
     }
-    repoRoot = dir;
-  }
-  if (!repoRoot) {
-    return res.status(409).json({ error: true, data: null });
-  }
 
-  const filePath = path.join(repoRoot, `public`, `${name}.txt`);
-  const promptPath = path.join(repoRoot, `public`, `__prompt.txt`);
-
-  if (!existsSync(filePath)) {
-    return res.status(404).json({ error: true, data: null });
-  }
-
-  const transcript = await fs.readFile(filePath, 'utf-8');
-  const prompt = await fs.readFile(promptPath, 'utf-8');
-  let normalizedTranscription = normalizeMultilineText(transcript);
-
-  const query = `<transcript>
+    // Read transcript and prompt
+    const transcript = await fs.readFile(transcriptPath, 'utf-8');
+    const prompt = await fs.readFile(promptPath, 'utf-8');
+    
+    // Normalize and construct query
+    const normalizedTranscription = normalizeMultilineText(transcript);
+    const query = `<transcript>
 "${normalizedTranscription}"
 </transcript>
 
 ${prompt}
-${Constants.Query.directives}`;
+${QUERY_DIRECTIVES}`;
 
-  let answer = await queryOllamaHTTP(query);
+    // Query LLM
+    const answer = await queryOllamaHTTP(query);
 
-  const outPath = filePath.replace('.txt', `.introspection.txt`);
-  try {
-    await fs.unlink(outPath);
-    console.log(`Deleted existing file: ${path.basename(outPath)}`);
-  } catch (err) {}
+    if (!answer) {
+      return ApiResponses.serverErrorResponse(res, 'Failed to get response from LLM');
+    }
 
-  await fs.writeFile(outPath, answer, {
-    encoding: 'utf-8',
-    flag: 'w',
-  });
+    // Write introspection result
+    const outPath = FileSystem.getIntrospectionPath(name);
+    
+    // Delete existing introspection file if present
+    try {
+      await fs.unlink(outPath);
+      console.log(`Deleted existing introspection file`);
+    } catch (err) {
+      // File doesn't exist, ignore error
+    }
 
-  return res.status(200).json({ success: true, data: answer, out: outPath });
+    await fs.writeFile(outPath, answer, {
+      encoding: 'utf-8',
+      flag: 'w',
+    });
+
+    return ApiResponses.successResponse(res, { text: answer, path: outPath });
+  } catch (error) {
+    console.error('Introspection error:', error);
+    return ApiResponses.serverErrorResponse(res, 'Failed to process introspection');
+  }
 }

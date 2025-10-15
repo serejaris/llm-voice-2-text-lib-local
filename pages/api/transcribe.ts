@@ -1,12 +1,10 @@
-import fs from 'fs/promises';
-import path from 'path';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
-import * as Constants from '@common/constants';
 import * as Server from '@common/server';
-import * as Utilities from '@common/utilities';
-
-import { existsSync } from 'fs';
-import { nodewhisper } from 'nodejs-whisper';
+import * as Utilities from '@common/shared-utilities';
+import * as FileSystem from '@common/server/file-system';
+import * as ApiResponses from '@common/server/api-responses';
+import { transcribeAudioFile } from '@common/server/whisper-config';
 
 export const config = {
   api: {
@@ -14,52 +12,33 @@ export const config = {
   },
 };
 
-export default async function apiTranscribe(req, res) {
+export default async function apiTranscribe(req: NextApiRequest, res: NextApiResponse) {
   await Server.cors(req, res);
+
+  if (req.method !== 'POST') {
+    return ApiResponses.methodNotAllowedResponse(res, ['POST']);
+  }
 
   const { name } = req.body || {};
 
   if (Utilities.isEmpty(name)) {
-    return res.status(400).json({ error: true, data: null });
+    return ApiResponses.badRequestResponse(res, 'File name is required');
   }
 
-  const entryScript = process.cwd();
-  let repoRoot = entryScript;
-  if (!existsSync(path.join(entryScript, 'global.scss'))) {
-    let dir = path.dirname(entryScript);
-    while (dir !== '/' && !existsSync(path.join(dir, 'global.scss'))) {
-      dir = path.dirname(dir);
+  try {
+    const destPath = FileSystem.getPublicFilePath(name);
+
+    // Check if file exists
+    if (!FileSystem.fileExists(destPath)) {
+      return ApiResponses.notFoundResponse(res, `Audio file '${name}' not found`);
     }
-    repoRoot = dir;
+
+    // Transcribe using centralized configuration
+    await transcribeAudioFile(destPath);
+
+    return ApiResponses.successResponse(res, destPath);
+  } catch (error) {
+    console.error('Transcription error:', error);
+    return ApiResponses.serverErrorResponse(res, 'Failed to transcribe audio file');
   }
-  if (!repoRoot) {
-    return res.status(409).json({ error: true, data: null });
-  }
-
-  const destDir = path.join(repoRoot, 'public');
-  const destPath = path.join(destDir, `${name}`);
-
-  await nodewhisper(destPath, {
-    modelName: 'large-v3-turbo',
-    autoDownloadModelName: 'large-v3-turbo',
-    removeWavFileAfterTranscription: false,
-    withCuda: false,
-    logger: console,
-    whisperOptions: {
-      outputInCsv: false,
-      outputInJson: false,
-      outputInJsonFull: false,
-      outputInLrc: false,
-      outputInSrt: false,
-      outputInText: true,
-      outputInVtt: false,
-      outputInWords: false,
-      translateToEnglish: false,
-      wordTimestamps: false,
-      timestamps_length: 30,
-      splitOnWord: false,
-    },
-  });
-
-  return res.status(200).json({ success: true, data: destPath });
 }
