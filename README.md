@@ -12,8 +12,9 @@ This application allows you to upload video or audio files and automatically tra
 - 🎙️ **Audio Support** - Direct audio file transcription
 - 🔒 **Privacy-First** - All processing happens locally, no external API calls
 - ⚡ **M1 Optimized** - Excellent performance on Apple Silicon Macs
-- 🌍 **Multilingual** - Supports Russian and 90+ other languages via Whisper large-v3
-- 📝 **Accurate Transcription** - Using OpenAI's Whisper large-v3 model
+- 🌍 **Multilingual** - Supports Russian and 90+ other languages via Whisper large-v3-turbo
+- 📝 **Accurate Transcription** - Using OpenAI's Whisper large-v3-turbo model
+- 📊 **Progress Tracking** - Real-time upload and processing progress visualization
 
 ## Supported Formats
 
@@ -42,7 +43,7 @@ npm install
 brew install cmake
 brew install ffmpeg
 
-# Download Whisper model (large-v3)
+# Download Whisper model (large-v3-turbo)
 npx nodejs-whisper download
 ```
 
@@ -65,48 +66,62 @@ Open `http://localhost:10000` in your browser.
 
 ## Performance
 
-On MacBook M1 Pro with `large-v3` model:
-- 10-minute audio: ~1 minute processing
-- 60-minute audio: ~6 minutes processing
+On MacBook M1 Pro with `large-v3-turbo` model:
+- 10-minute audio: ~45 seconds processing
+- 60-minute audio: ~4-5 minutes processing
 
 ## Architecture
 
 ### Technology Stack
 
 - **Frontend**: Next.js 15, React 19, TypeScript, SCSS
-- **Transcription**: Whisper large-v3 (via nodejs-whisper)
+- **Transcription**: Whisper large-v3-turbo (via nodejs-whisper)
 - **Audio Extraction**: FFmpeg
+- **Progress Tracking**: Real-time upload and processing status
 - **Storage**: Local file system (`/public` directory)
 
 ### Code Organization
 
 ```
 common/
-├── server/                    # Server-only utilities
-│   ├── whisper-config.ts      # Whisper model configuration
-│   ├── video-processor.ts     # Video-to-audio extraction (FFmpeg)
-│   ├── file-system.ts         # File path utilities
-│   ├── file-type-validator.ts # File type validation
-│   └── api-responses.ts       # Standardized API responses
-├── hooks/                     # React hooks
-│   ├── useUploadProgress.ts   # Upload progress tracking
-│   └── useUploadStatusPolling.ts
-├── api-client.ts              # API utilities
-├── shared-utilities.ts        # Shared utilities
-└── constants.ts               # Application constants
+├── server/                       # Server-only utilities
+│   ├── whisper-config.ts         # Whisper model configuration & transcription
+│   ├── video-processor.ts        # Video-to-audio extraction (FFmpeg)
+│   ├── file-system.ts            # File path utilities
+│   ├── file-type-validator.ts    # File type validation
+│   ├── api-responses.ts          # Standardized API responses
+│   └── upload-status-manager.ts  # Upload progress state management
+├── hooks/                        # React hooks
+│   ├── useUploadProgress.ts      # Upload progress tracking hook
+│   └── useUploadStatusPolling.ts # Upload status polling hook
+├── upload-progress-types.ts      # TypeScript types for progress tracking
+├── api-client.ts                 # API utilities
+├── shared-utilities.ts           # Shared utilities
+├── constants.ts                  # Application constants
+├── hooks.ts                      # Hook utilities
+└── server.ts                     # Server utilities
 
-pages/api/                     # API endpoints
-├── upload.ts                  # Upload audio/video files
-├── transcribe.ts              # Transcribe audio
-├── get-transcription.ts       # Retrieve transcript
-├── list.ts                    # List audio files
-└── upload-status.ts           # Upload progress polling
+pages/api/                        # API endpoints
+├── upload.ts                     # Upload audio/video files
+├── transcribe.ts                 # Transcribe audio
+├── get-transcription.ts          # Retrieve transcript
+├── list.ts                       # List audio files
+└── upload-status.ts              # Upload progress polling
 
-components/                    # React components
-├── Application.tsx            # Main application UI
-├── ActionUploadButton.tsx     # Upload button
-├── InlineUploadProgress.tsx   # Progress bar
-└── FontSelector.tsx           # Font customization
+components/                       # React components
+├── Application.tsx               # Main application UI
+├── ActionUploadButton.tsx        # Upload button with drag-and-drop
+├── InlineUploadProgress.tsx      # Inline progress indicator
+├── UploadProgressOverlay.tsx     # Full-screen progress overlay
+├── ProgressBar.tsx               # Progress bar component
+├── CircularLoader.tsx            # Loading spinner
+├── TextArea.tsx                  # Transcription text area
+├── FontSelector.tsx              # Font customization
+├── ModalContext.tsx              # Modal management context
+├── DefaultLayout.tsx             # Default page layout
+├── DefaultMetaTags.tsx           # SEO meta tags
+├── Page.tsx                      # Page wrapper
+└── Providers.tsx                 # React context providers
 ```
 
 ### Data Flow
@@ -114,18 +129,20 @@ components/                    # React components
 ```
 1. Upload Video/Audio
    ↓
-2. Detect File Type
+2. Real-time upload progress tracking (polling /api/upload-status)
    ↓
-3a. If Video: Extract Audio with FFmpeg (16kHz, mono, WAV)
-3b. If Audio: Use directly
+3. Detect File Type
    ↓
-4. User clicks "Transcribe"
+4a. If Video: Extract Audio with FFmpeg (16kHz, mono, WAV)
+4b. If Audio: Use directly
    ↓
-5. Whisper processes audio
+5. User clicks "Transcribe"
    ↓
-6. Save transcript as [filename].txt
+6. Whisper processes audio (large-v3-turbo model)
    ↓
-7. Display in UI
+7. Save transcript as [filename].txt
+   ↓
+8. Display in UI with customizable fonts
 ```
 
 ### File Storage
@@ -152,8 +169,8 @@ FFMPEG_PATH=/opt/homebrew/bin/ffmpeg  # M1/M2/M3 Macs
 # Video processing timeout (milliseconds)
 VIDEO_PROCESSING_TIMEOUT=600000  # 10 minutes
 
-# Whisper model (default: large-v3)
-WHISPER_MODEL=large-v3
+# Whisper model (default: large-v3-turbo)
+WHISPER_MODEL=large-v3-turbo
 ```
 
 ### Whisper Model Configuration
@@ -161,8 +178,8 @@ WHISPER_MODEL=large-v3
 Edit `/common/server/whisper-config.ts` to change models:
 
 ```typescript
-// Available models: tiny, base, small, medium, large-v3, large-v3-turbo
-export const WHISPER_MODEL = 'large-v3';
+// Available models for nodejs-whisper
+export const WHISPER_MODEL = 'large-v3-turbo';
 ```
 
 **Model Comparison**:
@@ -170,8 +187,9 @@ export const WHISPER_MODEL = 'large-v3';
 - `base` - Good balance for real-time
 - `small` - Better quality, still fast
 - `medium` - High quality, slower
-- `large-v3` - **Best quality** (recommended), excellent for Russian
-- `large-v3-turbo` - Faster than large-v3, slightly less accurate
+- `large-v3-turbo` - **Best quality** (recommended), excellent for Russian and multilingual support
+
+**Note**: The `nodejs-whisper` library uses `large-v3-turbo` as the model name. This provides the best balance of quality and speed, with excellent Russian language support.
 
 ## Troubleshooting
 
@@ -237,15 +255,21 @@ The application automatically converts video to optimal format for Whisper:
 
 ### Whisper Configuration
 
+The application uses the following Whisper configuration (from `/common/server/whisper-config.ts`):
+
 ```typescript
 {
-  modelName: 'large-v3',
+  modelName: 'large-v3-turbo',
+  autoDownloadModelName: 'large-v3-turbo',
   removeWavFileAfterTranscription: false,
   withCuda: false,  // CPU/Metal acceleration on Mac
+  logger: console,
   whisperOptions: {
     outputInText: true,
     translateToEnglish: false,  // Keep original language
     wordTimestamps: false,
+    timestamps_length: 30,
+    splitOnWord: false,
   }
 }
 ```
