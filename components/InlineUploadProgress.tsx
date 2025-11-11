@@ -12,13 +12,15 @@ export default function InlineUploadProgress({ uploadState }: InlineUploadProgre
   }
 
   const isUploading = uploadState.stage === UploadTypes.UploadStage.UPLOADING;
-  const isProcessing = uploadState.stage === UploadTypes.UploadStage.EXTRACTING;
+  const isProcessing =
+    uploadState.stage === UploadTypes.UploadStage.EXTRACTING ||
+    uploadState.stage === UploadTypes.UploadStage.TRANSCRIBING;
   const progress = uploadState.uploadProgress;
 
   return (
     <div className={styles.container}>
       <div className={styles.progressBar}>
-        <div 
+        <div
           className={`${styles.progressFill} ${isProcessing ? styles.indeterminate : ''}`}
           style={!isProcessing ? { width: `${progress}%` } : undefined}
         />

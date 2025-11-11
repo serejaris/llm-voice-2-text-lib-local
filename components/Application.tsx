@@ -63,13 +63,23 @@ export default function Application({ children }: { children?: React.ReactNode }
     },
     onComplete: async (filename) => {
       handleSuccess();
+
+      // If we were transcribing, load the new transcription
+      if (uploadState.stage === UploadTypes.UploadStage.TRANSCRIBING) {
+        const transcriptionResponse = await Queries.getData({
+          route: '/api/get-transcription',
+          body: { name: filename }
+        });
+        setTranscription(transcriptionResponse ? transcriptionResponse.data : '');
+        setTranscribing(false);
+      }
+
       // Refresh file list after successful upload (audio extraction complete)
       const response = await Queries.getData({ route: '/api/list' });
       if (response) {
         setFiles(response.data);
       }
       setUploading(false);
-      // Note: NOT setting transcribing to false - upload is done, but transcription is manual
     },
     onError: (error) => {
       handleError(error);
@@ -128,6 +138,27 @@ export default function Application({ children }: { children?: React.ReactNode }
     setUploading(false);
     stopPolling();
   }, [cancelUpload, stopPolling]);
+
+  // Handle transcription start
+  const handleTranscribeStart = React.useCallback(async (fileName: string) => {
+    const uploadId = UploadTypes.generateUploadId();
+
+    // Initialize upload state for transcription
+    initializeUpload({
+      fileName,
+      fileSize: 0, // File already on server
+      uploadId,
+    });
+
+    // Transition to transcribing stage
+    transitionToStage(UploadTypes.UploadStage.TRANSCRIBING, 'Transcribing audio...');
+
+    // Start polling for transcription status
+    startPolling(uploadId);
+
+    // Start transcription on server
+    await Queries.getData({ route: '/api/transcribe', body: { name: fileName, uploadId } });
+  }, [initializeUpload, transitionToStage, startPolling]);
 
   async function onSelect(name) {
     setCurrent(name);
@@ -226,7 +257,7 @@ export default function Application({ children }: { children?: React.ReactNode }
         <div className={styles.section}>
           <div className={styles.top}>
             <Action
-              disabled={uploading || transcribing}
+              disabled={uploading || transcribing || uploadState.active}
               onClick={async () => {
                 const confirm = window.confirm(`Are you sure you want to transcribe ${current}? This process may take over 5 minutes.`);
 
@@ -240,13 +271,7 @@ export default function Application({ children }: { children?: React.ReactNode }
                 }
 
                 setTranscribing(true);
-                const response = await Queries.getData({ route: '/api/transcribe', body: { name: current } });
-
-                const transcriptionResponse = await Queries.getData({ route: '/api/get-transcription', body: { name: current } });
-
-                setTranscription(transcriptionResponse ? transcriptionResponse.data : '');
-
-                setTranscribing(false);
+                await handleTranscribeStart(current);
               }}
             >
               ◎ Transcribe
