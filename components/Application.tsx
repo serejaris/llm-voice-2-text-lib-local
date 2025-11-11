@@ -10,7 +10,6 @@ import * as UploadTypes from '@common/upload-progress-types';
 
 import CircularLoader from '@components/CircularLoader';
 import ActionUploadButton from '@components/ActionUploadButton';
-import TextArea from '@components/TextArea';
 import FontSelector from '@components/FontSelector';
 import InlineUploadProgress from '@components/InlineUploadProgress';
 import { useUploadProgress } from '@common/hooks/useUploadProgress';
@@ -32,28 +31,17 @@ const File = (props) => {
   return <div className={styles.file} {...props} />;
 };
 
-const Copy = (props) => {
-  return <div className={styles.copy} {...props} />;
-};
-
 const TranscriptionCopy = (props) => {
   const { style, ...rest } = props;
   return <div className={styles.copyTranscription} style={style} {...rest} />;
 };
 
-const Prompt = (props) => {
-  return <TextArea value={props.value} onChange={props.onChange}></TextArea>;
-};
-
 export default function Application({ children }: { children?: React.ReactNode }) {
-  const [prompt, setPrompt] = React.useState('');
   const [current, setCurrent] = React.useState('');
   const [files, setFiles] = React.useState<string[]>([]);
   const [uploading, setUploading] = React.useState(true);
   const [transcribing, setTranscribing] = React.useState(false);
-  const [introspecting, setIntrospecting] = React.useState(false);
   const [transcription, setTranscription] = React.useState('');
-  const [introspection, setIntrospection] = React.useState('');
   const [transcriptionFont, setTranscriptionFont] = React.useState(Constants.DEFAULT_TRANSCRIPTION_FONT);
   
   // Upload progress management
@@ -95,7 +83,6 @@ export default function Application({ children }: { children?: React.ReactNode }
     const abortController = initializeUpload(data);
     setUploading(true);
     // Don't set transcribing - upload and transcription are separate
-    setIntrospection('');
   }, [initializeUpload]);
   
   // Handle upload progress
@@ -124,7 +111,7 @@ export default function Application({ children }: { children?: React.ReactNode }
       setFiles(response.data);
     }
     setUploading(false);
-    // Don't set transcribing or introspecting - those are manual operations
+    // Transcription is a manual operation - user clicks "Transcribe" button
   }, [handleSuccess]);
   
   // Handle upload error
@@ -146,27 +133,16 @@ export default function Application({ children }: { children?: React.ReactNode }
     setCurrent(name);
     setUploading(false);
     setTranscribing(true);
-    setIntrospecting(true);
 
     const response = await Queries.getData({ route: '/api/get-transcription', body: { name } });
 
     setTranscription(response ? response.data : '');
 
-    const introspectionResponse = await Queries.getData({ route: '/api/get-introspection', body: { name } });
-
-    setIntrospection(introspectionResponse ? introspectionResponse.data : '');
-
     setTranscribing(false);
-    setIntrospecting(false);
   }
 
   React.useEffect(() => {
     async function init() {
-      const promptResponse = await Queries.getData({ route: '/api/get-prompt' });
-      if (promptResponse) {
-        setPrompt(promptResponse.data);
-      }
-
       const response = await Queries.getData({ route: '/api/list' });
 
       if (!response) {
@@ -201,7 +177,7 @@ export default function Application({ children }: { children?: React.ReactNode }
         <div className={styles.section}>
           <div className={styles.top}>
             <ActionUploadButton
-              disabled={uploading || transcribing || introspecting}
+              disabled={uploading || transcribing}
               onUploadStart={handleUploadStart}
               onProgress={handleUploadProgress}
               onStageChange={handleStageChange}
@@ -232,7 +208,7 @@ export default function Application({ children }: { children?: React.ReactNode }
                     key={each}
                     selected={each === current}
                     onClick={async () => {
-                      if (uploading || transcribing || introspecting) {
+                      if (uploading || transcribing) {
                         alert('You need to wait till we finish our current task.');
                         return;
                       }
@@ -250,7 +226,7 @@ export default function Application({ children }: { children?: React.ReactNode }
         <div className={styles.section}>
           <div className={styles.top}>
             <Action
-              disabled={uploading || transcribing || introspecting}
+              disabled={uploading || transcribing}
               onClick={async () => {
                 const confirm = window.confirm(`Are you sure you want to transcribe ${current}? This process may take over 5 minutes.`);
 
@@ -276,34 +252,8 @@ export default function Application({ children }: { children?: React.ReactNode }
               ◎ Transcribe
             </Action>
 
-            {Utilities.isEmpty(transcription) ? null : (
-              <Action
-                disabled={uploading || transcribing || introspecting}
-                onClick={async () => {
-                  const confirm = window.confirm('Are you sure you want to introspect on this transcript? This process may take over 5 minutes.');
-
-                  if (!confirm) {
-                    return;
-                  }
-
-                  if (Utilities.isEmpty(current)) {
-                    alert('You need to select an audio file to run a transcription.');
-                    return;
-                  }
-
-                  setIntrospecting(true);
-
-                  const response = await Queries.getData({ route: '/api/introspect', body: { name: current } });
-                  setIntrospection(response ? response.data : '');
-                  setIntrospecting(false);
-                }}
-              >
-                ◎ Introspect
-              </Action>
-            )}
-
             <FontSelector
-              disabled={uploading || transcribing || introspecting}
+              disabled={uploading || transcribing}
               selectedFont={transcriptionFont}
               onFontChange={handleFontChange}
             />
@@ -319,39 +269,6 @@ export default function Application({ children }: { children?: React.ReactNode }
                 transcription
               )}
             </TranscriptionCopy>
-          </div>
-        </div>
-      </div>
-      <div className={styles.wide}>
-        <div className={styles.section}>
-          <div className={styles.top}>
-            <Action
-              disabled={uploading || transcribing || introspecting}
-              onClick={async () => {
-                const response = await Queries.getData({ route: '/api/update-prompt', body: { prompt } });
-
-                if (response) {
-                  alert('Your new prompt is saved.');
-                }
-              }}
-            >
-              ◎ Update Default Prompt
-            </Action>
-          </div>
-          <div className={styles.middle}>
-            <Prompt value={prompt} onChange={(e) => setPrompt(e.target.value)}></Prompt>
-          </div>
-          <div className={styles.bottom}>
-            <Copy>
-              {introspecting ? (
-                <>
-                  <CircularLoader />
-                  <div className={styles.caption}>PLEASE WAIT</div>
-                </>
-              ) : (
-                introspection
-              )}
-            </Copy>
           </div>
         </div>
       </div>

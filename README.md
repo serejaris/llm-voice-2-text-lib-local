@@ -1,182 +1,273 @@
-# NEXTJS-OFFLINE-WHISPER-TO-LLM
+# WHISPER VIDEO TRANSCRIPTION
 
 ![Image](https://github.com/user-attachments/assets/75313f6e-05ec-4bc4-8275-032ec07e5521)
 
-This repository contains an offline-first, browser-based application developed with [Next.js](https://github.com/vercel/next.js/) that allows users to locally transcribe audio recordings (successfully tested for audio lengths up to 20 minutes) into accurate, plain-text transcripts.
+Local video and audio transcription using OpenAI's Whisper model, optimized for MacBook M1/M2/M3.
 
-**NEW: Video Processing** - Now supports uploading video files! The application automatically extracts audio from videos and processes them for transcription.
+This application allows you to upload video or audio files and automatically transcribe them to text completely offline. All processing happens locally on your machine - your data never leaves your computer, ensuring complete privacy.
 
-These transcripts can then be processed by a locally hosted [Large Language Model](https://ollama.com/library/gemma3) (LLM), entirely offline without compromising data privacy.
+## Features
 
-While the initial setup for this repository may pose challenges for people without technical expertise, only two straightforward commands via a [CLI](https://ghostty.org/) are required once the environment is properly configured. This repository serves as an open source reference for securely handling sensitive data, ensuring it remains local and never transits external networks.
+- 🎬 **Video Support** - Upload video files and automatically extract audio for transcription
+- 🎙️ **Audio Support** - Direct audio file transcription
+- 🔒 **Privacy-First** - All processing happens locally, no external API calls
+- ⚡ **M1 Optimized** - Excellent performance on Apple Silicon Macs
+- 🌍 **Multilingual** - Supports Russian and 90+ other languages via Whisper large-v3
+- 📝 **Accurate Transcription** - Using OpenAI's Whisper large-v3 model
 
-Contributions are welcome. If you wish to contribute, please submit a proposal via a GitHub issue or directly provide a pull request.
+## Supported Formats
 
-### Setup (MacOS)
+**Video**: MP4, MOV, AVI, MKV, WebM, FLV
+**Audio**: WAV, MP3, OGG, FLAC, M4A
 
-Start by cloning the repository.
+## Quick Start (MacOS)
 
-You will have wanted to setup your development environment by following steps [here](https://github.com/internet-development/nextjs-sass-starter/issues/3).
+### Prerequisites
 
-Then you will need to run the following commands
+- MacBook (M1/M2/M3 or Intel)
+- Node.js 18 or higher
+- Command line access
+
+### Installation
 
 ```sh
-cd nextjs-offline-whisper-to-llm
+# Clone the repository
+git clone <repository-url>
+cd whisper-video-transcription
 
+# Install dependencies
 npm install
 
+# Install system dependencies via Homebrew
 brew install cmake
 brew install ffmpeg
-brew install ollama
 
-# Best model for us is the best whisper model `large-v3-turbo`
+# Download Whisper model (large-v3)
 npx nodejs-whisper download
-
-# Start Ollama for the first time
-# This command runs `ollama serve` with some environment variables
-npm run llm
-
-# Best model for us running on a MacBook Air M4, 2025 (32GB)
-ollama pull gemma3:27b
 ```
 
-Now you can run this script in another window
+### Run the Application
 
 ```sh
-npm run local
+# Start the development server
+npm run dev
 ```
 
-Go to `http://localhost:10000` in your browser of choice.
+Open `http://localhost:10000` in your browser.
 
-### Architecture
+## How to Use
 
-This application has been refactored for simplicity and maintainability following DRY principles.
+1. **Upload** - Click the upload button and select a video or audio file
+2. **Wait** - The app will automatically extract audio (if video)
+3. **Select** - Click on the audio file in the left panel
+4. **Transcribe** - Click "Transcribe" button and wait for processing
+5. **View** - Your transcription will appear in the main panel
 
-#### Technology Stack
+## Performance
 
-- **Frontend**: Next.js (React), TypeScript, SCSS
-- **Transcription**: Whisper (via nodejs-whisper) - runs locally
-- **LLM**: Ollama with Gemma3 27B model - runs locally
-- **Storage**: File system (public directory)
+On MacBook M1 Pro with `large-v3` model:
+- 10-minute audio: ~1 minute processing
+- 60-minute audio: ~6 minutes processing
 
-#### Code Organization
+## Architecture
+
+### Technology Stack
+
+- **Frontend**: Next.js 15, React 19, TypeScript, SCSS
+- **Transcription**: Whisper large-v3 (via nodejs-whisper)
+- **Audio Extraction**: FFmpeg
+- **Storage**: Local file system (`/public` directory)
+
+### Code Organization
 
 ```
 common/
 ├── server/                    # Server-only utilities
-│   ├── file-system.ts         # File path utilities and repository detection
 │   ├── whisper-config.ts      # Whisper model configuration
-│   ├── llm-config.ts          # Ollama LLM configuration and utilities
-│   ├── api-responses.ts       # Standardized API response helpers
-│   ├── file-type-validator.ts # File type validation (audio/video)
-│   └── video-processor.ts     # Video-to-audio extraction with FFmpeg
-├── api-client.ts              # Frontend API call utilities
-├── shared-utilities.ts        # Utilities safe for both client and server
-├── constants.ts               # Application constants
-└── server.ts                  # Simplified CORS middleware
+│   ├── video-processor.ts     # Video-to-audio extraction (FFmpeg)
+│   ├── file-system.ts         # File path utilities
+│   ├── file-type-validator.ts # File type validation
+│   └── api-responses.ts       # Standardized API responses
+├── hooks/                     # React hooks
+│   ├── useUploadProgress.ts   # Upload progress tracking
+│   └── useUploadStatusPolling.ts
+├── api-client.ts              # API utilities
+├── shared-utilities.ts        # Shared utilities
+└── constants.ts               # Application constants
 
-pages/api/                     # API endpoints (all refactored)
-├── upload.ts                  # Upload and auto-transcribe audio
-├── transcribe.ts              # Re-transcribe existing audio
-├── introspect.ts              # LLM introspection on transcripts
+pages/api/                     # API endpoints
+├── upload.ts                  # Upload audio/video files
+├── transcribe.ts              # Transcribe audio
 ├── get-transcription.ts       # Retrieve transcript
-├── get-introspection.ts       # Retrieve introspection result
-├── get-prompt.ts              # Get default prompt
-├── update-prompt.ts           # Update default prompt
-└── list.ts                    # List audio files
+├── list.ts                    # List audio files
+└── upload-status.ts           # Upload progress polling
 
 components/                    # React components
-└── Application.tsx            # Main application interface
+├── Application.tsx            # Main application UI
+├── ActionUploadButton.tsx     # Upload button
+├── InlineUploadProgress.tsx   # Progress bar
+└── FontSelector.tsx           # Font customization
 ```
 
-#### Configuration
+### Data Flow
 
-All configuration is centralized for easy modification:
-
-**Whisper Model** (`common/server/whisper-config.ts`):
-- Change `WHISPER_MODEL` to use a different Whisper model
-- Currently: `large-v3-turbo`
-
-**LLM Configuration** (`common/server/llm-config.ts`):
-- `OLLAMA_ENDPOINT`: Ollama server URL (default: `http://localhost:11434`)
-- `OLLAMA_MODEL`: LLM model name (default: `gemma3:27b`)
-- Can be overridden with environment variables: `OLLAMA_HOST`, `OLLAMA_MODEL`
-
-**File Handling** (`common/server/file-system.ts`):
-- Supported audio formats: `.wav`, `.mp3`, `.ogg`, `.flac`, `.m4a`
-- Supported video formats: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.flv`
-- Prompt file: `__prompt.txt` in public directory
-- Transcripts: `filename.txt`
-- Introspections: `filename.introspection.txt`
-
-**Video Processing** (`common/server/video-processor.ts`):
-- Extracts audio from video files using FFmpeg
-- Outputs WAV format (16kHz, mono) optimized for Whisper
-- Configurable timeout (default: 5 minutes)
-- Optional video file retention
-
-#### Data Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Browser
-    participant API
-    participant Whisper
-    participant Ollama
-    participant FileSystem
-
-    User->>Browser: Upload audio file
-    Browser->>API: POST /api/upload
-    API->>FileSystem: Save audio file
-    API->>Whisper: Transcribe audio
-    Whisper->>FileSystem: Save transcript
-    API->>Browser: Return filename
-
-    Note over User,Browser: Video Upload (NEW)
-    User->>Browser: Upload video file
-    Browser->>API: POST /api/upload
-    API->>FileSystem: Save temp video
-    API->>API: Extract audio (FFmpeg)
-    API->>FileSystem: Save extracted audio
-    API->>Whisper: Transcribe audio
-    Whisper->>FileSystem: Save transcript
-    API->>Browser: Return filename
-
-    User->>Browser: Request introspection
-    Browser->>API: POST /api/introspect
-    API->>FileSystem: Read transcript + prompt
-    API->>Ollama: Query with transcript
-    Ollama->>API: Return analysis
-    API->>FileSystem: Save introspection
-    API->>Browser: Return result
+```
+1. Upload Video/Audio
+   ↓
+2. Detect File Type
+   ↓
+3a. If Video: Extract Audio with FFmpeg (16kHz, mono, WAV)
+3b. If Audio: Use directly
+   ↓
+4. User clicks "Transcribe"
+   ↓
+5. Whisper processes audio
+   ↓
+6. Save transcript as [filename].txt
+   ↓
+7. Display in UI
 ```
 
-#### Key Features
+### File Storage
 
-- **No Code Duplication**: Repository root detection, Whisper config, and file paths centralized
-- **Type Safety**: TypeScript with proper typing throughout
-- **Standardized Responses**: Consistent API response format across all endpoints
-- **Error Handling**: Comprehensive error messages for debugging
-- **Local-Only**: No external API calls, all processing happens locally
-- **Privacy-First**: Audio and transcripts never leave your machine
-- **Video Support**: Automatically extracts audio from video files for transcription
+All files are stored in `/public` directory:
 
-### Development Scripts
+```
+/public/
+├── video.wav              # Extracted or uploaded audio
+└── video.wav.txt          # Transcription text
+```
 
-If you need to run our test script to test the pipeline, run this command. This Script can also help fix the Whisper installation if you're running into issues with not being able to find `whisper-cli`
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file (copy from `.env.example`):
+
+```bash
+# FFmpeg path (optional, auto-detected)
+FFMPEG_PATH=/opt/homebrew/bin/ffmpeg  # M1/M2/M3 Macs
+# FFMPEG_PATH=/usr/local/bin/ffmpeg   # Intel Macs
+
+# Video processing timeout (milliseconds)
+VIDEO_PROCESSING_TIMEOUT=600000  # 10 minutes
+
+# Whisper model (default: large-v3)
+WHISPER_MODEL=large-v3
+```
+
+### Whisper Model Configuration
+
+Edit `/common/server/whisper-config.ts` to change models:
+
+```typescript
+// Available models: tiny, base, small, medium, large-v3, large-v3-turbo
+export const WHISPER_MODEL = 'large-v3';
+```
+
+**Model Comparison**:
+- `tiny` - Fastest, least accurate
+- `base` - Good balance for real-time
+- `small` - Better quality, still fast
+- `medium` - High quality, slower
+- `large-v3` - **Best quality** (recommended), excellent for Russian
+- `large-v3-turbo` - Faster than large-v3, slightly less accurate
+
+## Troubleshooting
+
+### Whisper Installation Issues
+
+If transcription fails, try downloading the model manually:
 
 ```sh
-# Start Ollama for the first time
-# This command runs `ollama serve` with some environment variables
-npm run llm
-
-# Then run this script in another window.
-npm run script run
+npx nodejs-whisper download
 ```
 
-### Contact
+### FFmpeg Not Found
 
-For detailed information about the video processing feature, see [VIDEO_PROCESSING_FEATURE.md](VIDEO_PROCESSING_FEATURE.md).
+Install FFmpeg via Homebrew:
 
-If you have questions ping me on Twitter, [@wwwjim](https://www.twitter.com/wwwjim). Or you can ping [@internetxstudio](https://x.com/internetxstudio).
+```sh
+brew install ffmpeg
+
+# Verify installation
+ffmpeg -version
+```
+
+### Model Download Fails
+
+Models are downloaded automatically on first use. If download fails:
+
+1. Check your internet connection
+2. Run `npx nodejs-whisper download` manually
+3. Wait for download to complete (models are 1-3GB)
+
+## Privacy & Security
+
+- **100% Local Processing** - No cloud services, no external APIs
+- **No Telemetry** - No usage tracking or data collection
+- **Offline Capable** - Works without internet (after initial setup)
+- **Your Data Stays Yours** - Files never leave your machine
+
+## Development
+
+### Build for Production
+
+```sh
+npm run build
+npm run start
+```
+
+### Test Scripts
+
+```sh
+npm run script
+```
+
+## Technical Details
+
+### FFmpeg Audio Extraction
+
+The application automatically converts video to optimal format for Whisper:
+
+- **Format**: WAV (PCM)
+- **Sample Rate**: 16kHz (optimal for speech recognition)
+- **Channels**: Mono
+- **Bit Depth**: 16-bit
+
+### Whisper Configuration
+
+```typescript
+{
+  modelName: 'large-v3',
+  removeWavFileAfterTranscription: false,
+  withCuda: false,  // CPU/Metal acceleration on Mac
+  whisperOptions: {
+    outputInText: true,
+    translateToEnglish: false,  // Keep original language
+    wordTimestamps: false,
+  }
+}
+```
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Open an issue to discuss major changes
+2. Submit pull requests for bug fixes or features
+3. Follow existing code style and architecture
+
+## License
+
+MIT
+
+## Contact
+
+Questions? Reach out on Twitter:
+- [@wwwjim](https://twitter.com/wwwjim)
+- [@internetxstudio](https://x.com/internetxstudio)
+
+---
+
+**Note**: This is a refactored version focused purely on local transcription. All LLM analysis features have been removed to create a streamlined, privacy-focused transcription tool.

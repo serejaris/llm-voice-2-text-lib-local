@@ -2,9 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 // Constants for file naming
-export const PROMPT_FILE_NAME = '__prompt.txt';
 export const TRANSCRIPTION_EXTENSION = '.txt';
-export const INTROSPECTION_EXTENSION = '.introspection.txt';
 export const SUPPORTED_AUDIO_EXTENSIONS = ['.wav', '.mp3', '.ogg', '.flac', '.m4a'];
 
 // Cache for repository root to avoid repeated filesystem traversal
@@ -108,34 +106,13 @@ export function ensurePublicDirectory(): boolean {
 
 /**
  * Gets the path for a transcription file based on the audio filename.
- * 
+ *
  * @param audioFilename - The original audio filename
  * @returns The absolute path to the transcription file
  */
 export function getTranscriptionPath(audioFilename: string): string {
   const publicDir = getPublicDirectoryPath();
   return path.join(publicDir, `${audioFilename}${TRANSCRIPTION_EXTENSION}`);
-}
-
-/**
- * Gets the path for an introspection file based on the audio filename.
- * 
- * @param audioFilename - The original audio filename
- * @returns The absolute path to the introspection file
- */
-export function getIntrospectionPath(audioFilename: string): string {
-  const publicDir = getPublicDirectoryPath();
-  return path.join(publicDir, `${audioFilename}${INTROSPECTION_EXTENSION}`);
-}
-
-/**
- * Gets the path for the prompt file.
- * 
- * @returns The absolute path to the prompt file
- */
-export function getPromptFilePath(): string {
-  const publicDir = getPublicDirectoryPath();
-  return path.join(publicDir, PROMPT_FILE_NAME);
 }
 
 /**
