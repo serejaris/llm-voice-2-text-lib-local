@@ -171,6 +171,34 @@ export default function Application({ children }: { children?: React.ReactNode }
     Utilities.setFontPreference(Constants.TRANSCRIPTION_FONT_STORAGE_KEY, newFont);
   };
 
+  // Handle download transcription
+  const handleDownload = () => {
+    if (Utilities.isEmpty(transcription)) {
+      alert('No transcription available to download.');
+      return;
+    }
+
+    // Create a blob from the transcription text
+    const blob = new Blob([transcription], { type: 'text/plain;charset=utf-8' });
+
+    // Create a download link
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+
+    // Use the current filename (without .wav extension) for the download
+    const filename = current ? current.replace(/\.wav$/i, '.txt') : 'transcription.txt';
+    link.download = filename;
+
+    // Trigger download
+    document.body.appendChild(link);
+    link.click();
+
+    // Clean up
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className={styles.root}>
       <div className={styles.column}>
@@ -250,6 +278,13 @@ export default function Application({ children }: { children?: React.ReactNode }
               }}
             >
               ◎ Transcribe
+            </Action>
+
+            <Action
+              disabled={uploading || transcribing || Utilities.isEmpty(transcription)}
+              onClick={handleDownload}
+            >
+              ⭳ Download
             </Action>
 
             <FontSelector
