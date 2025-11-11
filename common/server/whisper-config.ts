@@ -2,10 +2,11 @@ import { nodewhisper } from 'nodejs-whisper';
 
 /**
  * Whisper model configuration.
- * Using large-v3 for optimal quality with Russian language support.
+ * Using large-v3-turbo for optimal quality with Russian language support.
  * The model is multilingual and works excellently with Russian audio.
+ * Note: nodejs-whisper supports 'large-v3-turbo' (not 'large-v3')
  */
-export const WHISPER_MODEL = 'large-v3';
+export const WHISPER_MODEL = 'large-v3-turbo';
 
 /**
  * Complete configuration object for nodewhisper transcription.
