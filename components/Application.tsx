@@ -14,6 +14,7 @@ import FontSelector from '@components/FontSelector';
 import InlineUploadProgress from '@components/InlineUploadProgress';
 import { useUploadProgress } from '@common/hooks/useUploadProgress';
 import { useUploadStatusPolling } from '@common/hooks/useUploadStatusPolling';
+import { useTranscriptionQueue, TranscriptionStatus } from '@common/hooks/useTranscriptionQueue';
 
 const Action = (props) => {
   if (props.disabled) {
@@ -40,10 +41,19 @@ export default function Application({ children }: { children?: React.ReactNode }
   const [current, setCurrent] = React.useState('');
   const [files, setFiles] = React.useState<string[]>([]);
   const [uploading, setUploading] = React.useState(true);
-  const [transcribing, setTranscribing] = React.useState(false);
   const [transcription, setTranscription] = React.useState('');
   const [transcriptionFont, setTranscriptionFont] = React.useState(Constants.DEFAULT_TRANSCRIPTION_FONT);
-  
+
+  // Transcription queue management
+  const {
+    jobs: transcriptionJobs,
+    stats: queueStats,
+    addJob: addTranscriptionJob,
+    getJobByFileName,
+    isProcessing: isQueueProcessing,
+    currentJob,
+  } = useTranscriptionQueue();
+
   // Upload progress management
   const {
     uploadState,
@@ -74,7 +84,6 @@ export default function Application({ children }: { children?: React.ReactNode }
     onError: (error) => {
       handleError(error);
       setUploading(false);
-      setTranscribing(false);
     },
   });
 
@@ -118,7 +127,6 @@ export default function Application({ children }: { children?: React.ReactNode }
   const handleUploadError = React.useCallback((error: string) => {
     handleError(error);
     setUploading(false);
-    setTranscribing(false);
     stopPolling();
   }, [handleError, stopPolling]);
   
@@ -132,13 +140,16 @@ export default function Application({ children }: { children?: React.ReactNode }
   async function onSelect(name) {
     setCurrent(name);
     setUploading(false);
-    setTranscribing(true);
 
-    const response = await Queries.getData({ route: '/api/get-transcription', body: { name } });
-
-    setTranscription(response ? response.data : '');
-
-    setTranscribing(false);
+    // Check if there's a completed transcription for this file
+    const job = getJobByFileName(name);
+    if (job && job.status === TranscriptionStatus.COMPLETED && job.transcription) {
+      setTranscription(job.transcription);
+    } else {
+      // Load transcription from file if exists
+      const response = await Queries.getData({ route: '/api/get-transcription', body: { name } });
+      setTranscription(response ? response.data : '');
+    }
   }
 
   React.useEffect(() => {
@@ -171,13 +182,23 @@ export default function Application({ children }: { children?: React.ReactNode }
     Utilities.setFontPreference(Constants.TRANSCRIPTION_FONT_STORAGE_KEY, newFont);
   };
 
+  // Auto-update transcription when current file's job completes
+  React.useEffect(() => {
+    if (!current) return;
+
+    const job = getJobByFileName(current);
+    if (job && job.status === TranscriptionStatus.COMPLETED && job.transcription) {
+      setTranscription(job.transcription);
+    }
+  }, [current, transcriptionJobs, getJobByFileName]);
+
   return (
     <div className={styles.root}>
       <div className={styles.column}>
         <div className={styles.section}>
           <div className={styles.top}>
             <ActionUploadButton
-              disabled={uploading || transcribing}
+              disabled={uploading}
               onUploadStart={handleUploadStart}
               onProgress={handleUploadProgress}
               onStageChange={handleStageChange}
@@ -203,21 +224,38 @@ export default function Application({ children }: { children?: React.ReactNode }
 
                 .filter((each) => each.toLowerCase().endsWith('.wav'))
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-                .map((each) => (
-                  <File
-                    key={each}
-                    selected={each === current}
-                    onClick={async () => {
-                      if (uploading || transcribing) {
-                        alert('You need to wait till we finish our current task.');
-                        return;
-                      }
-                      await onSelect(each);
-                    }}
-                  >
-                    ⭢ {each}
-                  </File>
-                ))
+                .map((each) => {
+                  const job = getJobByFileName(each);
+                  let statusIndicator = '⭢';
+
+                  if (job) {
+                    if (job.status === TranscriptionStatus.QUEUED) {
+                      statusIndicator = `⏳ [${job.queuePosition}]`;
+                    } else if (job.status === TranscriptionStatus.PROCESSING) {
+                      statusIndicator = '⚙️';
+                    } else if (job.status === TranscriptionStatus.COMPLETED) {
+                      statusIndicator = '✓';
+                    } else if (job.status === TranscriptionStatus.ERROR) {
+                      statusIndicator = '✗';
+                    }
+                  }
+
+                  return (
+                    <File
+                      key={each}
+                      selected={each === current}
+                      onClick={async () => {
+                        if (uploading) {
+                          alert('Please wait until the upload is complete.');
+                          return;
+                        }
+                        await onSelect(each);
+                      }}
+                    >
+                      {statusIndicator} {each}
+                    </File>
+                  );
+                })
             )}
           </div>
         </div>
@@ -226,48 +264,90 @@ export default function Application({ children }: { children?: React.ReactNode }
         <div className={styles.section}>
           <div className={styles.top}>
             <Action
-              disabled={uploading || transcribing}
+              disabled={uploading}
               onClick={async () => {
-                const confirm = window.confirm(`Are you sure you want to transcribe ${current}? This process may take over 5 minutes.`);
-
-                if (!confirm) {
-                  return;
-                }
-
                 if (Utilities.isEmpty(current)) {
                   alert('You need to select an audio file to create a transcription.');
                   return;
                 }
 
-                setTranscribing(true);
-                const response = await Queries.getData({ route: '/api/transcribe', body: { name: current } });
+                // Check if already queued or processing
+                const existingJob = getJobByFileName(current);
+                if (existingJob) {
+                  if (existingJob.status === TranscriptionStatus.QUEUED) {
+                    alert(`${current} is already queued for transcription (position ${existingJob.queuePosition}).`);
+                    return;
+                  } else if (existingJob.status === TranscriptionStatus.PROCESSING) {
+                    alert(`${current} is currently being transcribed. Please wait...`);
+                    return;
+                  } else if (existingJob.status === TranscriptionStatus.COMPLETED) {
+                    const confirm = window.confirm(
+                      `${current} has already been transcribed. Do you want to transcribe it again?`
+                    );
+                    if (!confirm) return;
+                  }
+                }
 
-                const transcriptionResponse = await Queries.getData({ route: '/api/get-transcription', body: { name: current } });
-
-                setTranscription(transcriptionResponse ? transcriptionResponse.data : '');
-
-                setTranscribing(false);
+                // Add to queue
+                const jobId = await addTranscriptionJob(current);
+                if (jobId) {
+                  const job = getJobByFileName(current);
+                  if (job && job.queuePosition) {
+                    alert(`${current} has been added to the transcription queue (position ${job.queuePosition}).`);
+                  } else {
+                    alert(`${current} has been added to the transcription queue.`);
+                  }
+                }
               }}
             >
               ◎ Transcribe
             </Action>
 
             <FontSelector
-              disabled={uploading || transcribing}
+              disabled={uploading}
               selectedFont={transcriptionFont}
               onFontChange={handleFontChange}
             />
           </div>
           <div className={styles.bottom}>
             <TranscriptionCopy style={{ '--font-transcription': transcriptionFont } as React.CSSProperties}>
-              {transcribing ? (
-                <>
-                  <CircularLoader />
-                  <div className={styles.caption}>PLEASE WAIT</div>
-                </>
-              ) : (
-                transcription
-              )}
+              {(() => {
+                const currentFileJob = current ? getJobByFileName(current) : null;
+
+                if (currentFileJob) {
+                  if (currentFileJob.status === TranscriptionStatus.PROCESSING) {
+                    return (
+                      <>
+                        <CircularLoader />
+                        <div className={styles.caption}>TRANSCRIBING...</div>
+                      </>
+                    );
+                  } else if (currentFileJob.status === TranscriptionStatus.QUEUED) {
+                    return (
+                      <div className={styles.caption}>
+                        Queued for transcription (position {currentFileJob.queuePosition})
+                        {queueStats && queueStats.queueLength > 0 && (
+                          <div style={{ marginTop: '10px', fontSize: '0.9em' }}>
+                            {queueStats.queueLength} job(s) in queue
+                          </div>
+                        )}
+                      </div>
+                    );
+                  } else if (currentFileJob.status === TranscriptionStatus.ERROR) {
+                    return (
+                      <div className={styles.caption} style={{ color: '#ff6b6b' }}>
+                        Transcription failed: {currentFileJob.error || 'Unknown error'}
+                      </div>
+                    );
+                  }
+                }
+
+                return transcription || (
+                  <div className={styles.caption} style={{ opacity: 0.5 }}>
+                    No transcription available. Click "Transcribe" to start.
+                  </div>
+                );
+              })()}
             </TranscriptionCopy>
           </div>
         </div>
