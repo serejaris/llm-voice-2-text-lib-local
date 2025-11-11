@@ -8,13 +8,34 @@
 .env-production
 .DS_STORE
 DS_STORE
+.DS_Store
 yarn.lock
 node_modules
 dist
 analytics.txt
 package-lock.json
 
+# Build artifacts
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# User uploads and generated content
+public/*.wav
+public/*.mp3
+public/*.mp4
+public/*.mov
+public/*.avi
+public/*.mkv
+public/*.webm
+public/*.flv
+public/*.ogg
+public/*.flac
+public/*.m4a
+public/*.txt
+!public/__prompt.txt
+
 /**/*/.DS_STORE
+/**/*/.DS_Store
 /**/*/node_modules
 /**/*/.next
 /**/*/.data
