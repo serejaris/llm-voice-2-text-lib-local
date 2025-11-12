@@ -15,6 +15,7 @@ export const config = {
     responseLimit: false,
     bodyParser: false,
   },
+  maxDuration: 300, // 5 minutes (can be increased up to 60 for Pro plan, 900 for Enterprise)
 };
 
 export default async function apiUpload(req, res) {
@@ -68,6 +69,38 @@ export default async function apiUpload(req, res) {
 
   // Extract uploadId from headers if present
   const uploadId = req.headers['x-upload-id'] as string | undefined;
+
+  // Log file upload statistics
+  console.log(`File upload stats:
+  - Filename: ${filename}
+  - Buffer size: ${fileBuffer.length} bytes (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)
+  - Total buffer size: ${buffer.length} bytes (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+
+  // Validate Content-Length to detect incomplete uploads
+  const contentLength = req.headers['content-length'];
+  if (contentLength) {
+    const expectedSize = parseInt(contentLength, 10);
+    const receivedSize = buffer.length;
+    
+    if (receivedSize < expectedSize * 0.95) { // Allow 5% tolerance for multipart overhead
+      console.warn(`WARNING: Incomplete upload detected!
+  - Expected: ${expectedSize} bytes (${(expectedSize / 1024 / 1024).toFixed(2)} MB)
+  - Received: ${receivedSize} bytes (${(receivedSize / 1024 / 1024).toFixed(2)} MB)
+  - Difference: ${((expectedSize - receivedSize) / 1024 / 1024).toFixed(2)} MB missing`);
+      
+      if (uploadId) {
+        setUploadStatus(uploadId, {
+          stage: UploadStage.ERROR,
+          message: 'Incomplete file upload',
+          error: `Only received ${((receivedSize / expectedSize) * 100).toFixed(1)}% of the file. Please try uploading again.`,
+        });
+      }
+      
+      return ApiResponses.badRequestResponse(res, `Incomplete file upload. Received ${((receivedSize / expectedSize) * 100).toFixed(1)}% of the file.`);
+    }
+    
+    console.log(`✓ Upload validation passed: received ${((receivedSize / expectedSize) * 100).toFixed(1)}% of expected size`);
+  }
 
   // Validate file type
   const validation = validateFileType(filename);

@@ -18,7 +18,7 @@ export interface VideoProcessingConfig {
  * Default configuration values
  */
 const DEFAULT_CONFIG: VideoProcessingConfig = {
-  timeout: 300000, // 5 minutes
+  timeout: 3600000, // 60 minutes (increased from 5 minutes to handle long videos)
   keepOriginalVideo: false,
   extractedAudioFormat: 'wav',
 };
@@ -82,6 +82,13 @@ export async function extractAudioFromVideo(
   try {
     // Step 1: Save video buffer to temporary file
     await fs.writeFile(tempVideoPath, videoBuffer);
+    
+    // Log video file statistics
+    console.log(`Video processing started:
+  - Filename: ${sanitizedVideoFilename}
+  - File size: ${videoBuffer.length} bytes (${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB)
+  - Output audio format: ${mergedConfig.extractedAudioFormat}
+  - Timeout: ${mergedConfig.timeout}ms`);
     
     // Step 2: Check FFmpeg availability
     const ffmpegAvailable = await checkFFmpegAvailability(mergedConfig.ffmpegPath);

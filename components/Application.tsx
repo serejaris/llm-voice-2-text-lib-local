@@ -287,12 +287,6 @@ export default function Application({ children }: { children?: React.ReactNode }
             <Action
               disabled={uploading || transcribing || uploadState.active}
               onClick={async () => {
-                const confirm = window.confirm(`Are you sure you want to transcribe ${current}? This process may take over 5 minutes.`);
-
-                if (!confirm) {
-                  return;
-                }
-
                 if (Utilities.isEmpty(current)) {
                   alert('You need to select an audio file to create a transcription.');
                   return;
